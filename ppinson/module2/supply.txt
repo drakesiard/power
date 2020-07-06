@@ -1,0 +1,80 @@
+Company
+RT R
+WeTrustInWind
+BlueHydro
+RT R
+KøbenhavnCHP
+KøbenhavnCHP
+KøbenhavnCHP
+DirtyPower
+DirtyPower
+DirtyPower
+RT R
+RT R
+SafePeak
+SafePeak
+SafePeak
+id
+G 1
+G 2
+G 3
+G 4
+G 5
+G 6
+G 7
+G 8
+G 9
+G 10
+G 11
+G 12
+G 13
+G 14
+G 15
+Amount (MWh)
+120
+50
+200
+400
+60
+50
+60
+100
+70
+50
+70
+45
+50
+60
+50
+Price (e/MWh)
+0
+0
+15
+30
+32.5
+34
+36
+37.5
+39
+40
+60
+70
+100
+150
+200
+Area
+DTU-West
+DTU-East
+DTU-West
+DTU-East
+DTU-West
+DTU-East
+DTU-West
+DTU-West
+DTU-West
+DTU-West
+DTU-East
+DTU-West
+DTU-East
+DTU-East
+DTU-East

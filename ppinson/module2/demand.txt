@@ -1,0 +1,65 @@
+Company
+CleanRetail
+El4You
+EVcharge
+QualiWatt
+IntelliWatt
+El4You
+CleanRetail
+IntelliWatt
+QualiWatt
+IntelliWatt
+CleanRetail
+El4You
+id
+D 1
+D 2
+D 3
+D 4
+D 5
+D 6
+D 7
+D 8
+D 9
+D 10
+D 11
+D 12
+Amount (MWh)
+250
+300
+120
+80
+40
+70
+60
+45
+30
+35
+25
+10
+Price (e/MWh)
+200
+110
+100
+90
+85
+75
+65
+40
+38
+31
+24
+16
+Area
+DTU-West
+DTU-East
+DTU-West
+DTU-East
+DTU-West
+DTU-West
+DTU-East
+DTU-West
+DTU-West
+DTU-East
+DTU-East
+DTU-East
