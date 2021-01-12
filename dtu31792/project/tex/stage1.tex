@@ -1,0 +1,54 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[numbers]{natbib}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{adjustbox}
+\usepackage{placeins}
+\usepackage{booktabs}
+\usepackage{tabulary}
+\usepackage{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
+\usepackage[a4paper, total={6in, 9in}]{geometry}
+
+\newcommand{\pkg}[1]{{\fontseries{b}\selectfont #1}} 
+
+\bibliographystyle{IEEEtranN}
+
+\title{\textbf{Project step 1: deterministic optimisation}}
+\author{S. Drake Siard\\
+DTU 31792, Spring 2021}
+\date{10 Jan 2021}
+\begin{document}
+
+\maketitle
+
+\section{Problem}
+
+The convex optimization problem selected in step 0 was the nodal energy market-clearing problem with transport constraints, approximating network power flow by DC linearisation, outlined in \cite{kazempourLectureMarketClearing2021}.
+In order to expand the problem to a reasonable size, day-ahead bid and offer data for October 7, 2020 were downloaded from the Midcontinent ISO (MISO) Market Data site \cite{MISOMarketData}.
+The data format was interpreted according to the MISO Energy Markets Business Practices Manual \cite{MISOEnergyOperating2020}. However, some simplifications were made:
+\begin{itemize}
+\item The day-ahead power market was simplified to economic participants and active power only, removing ancilliary services.
+\item Non-monotonic bid or offer curves were removed from the data set.
+\item Binary variables were avoided, as directed on \cite[p. 14]{kazempourLectureMarketClearing2021}, and therefore: 
+\begin{itemize}
+\item All block bids were treated as continuous (slope bids)
+\item Unit commitment constraints and costs were ignored
+\end{itemize}
+\end{itemize}
+
+
+The problem was coded in Python using the MOSEK Fusion API \cite{mosekapsMOSEKFusionAPI2021}.
+
+
+
+\renewcommand{\refname}{\section{References}}.
+\bibliography{DTU31792}
+
+
+\end{document}
