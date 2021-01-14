@@ -12,9 +12,10 @@
 \usepackage{booktabs}
 \usepackage{tabulary}
 \usepackage{hyperref}
-\usepackage[capitalise,noabbrev]{cleveref}
+\usepackage[capitalise]{cleveref}
 \usepackage[a4paper, total={6in, 9in}]{geometry}
 
+\creflabelformat{equation}{#2\textup{#1}#3}
 \newcommand{\pkg}[1]{{\fontseries{b}\selectfont #1}} 
 
 \bibliographystyle{IEEEtranN}
@@ -25,25 +26,106 @@ DTU 31792, Spring 2021}
 \date{10 Jan 2021}
 \begin{document}
 
+\newcommand{\pd}{\ensuremath{p^D_d}}
+\newcommand{\ud}{\ensuremath{U_d}}
+\newcommand{\pg}{\ensuremath{p^G_g}}
+\newcommand{\cg}{\ensuremath{C_g}}
+\newcommand{\bnm}{\ensuremath{B_{n,m}}}
+\newcommand{\tnm}{\ensuremath{t_{n,m}}}
+\newcommand{\fnm}{\ensuremath{f_{n,m}}}
+\newcommand{\FNM}{\ensuremath{F_{n,m}}}
+\newcommand{\PG}{\ensuremath{\overline{P}^G_g}}
+\newcommand{\PD}{\ensuremath{\overline{P}^D_d}}
+
+\newcommand{\mud}{\ensuremath{\mu_d^D}}
+\newcommand{\mug}{\ensuremath{\mu_g^G}}
+
 \maketitle
 
-\section{Problem}
+\section{Problem definitions}
 
-The convex optimization problem selected in step 0 was the nodal energy market-clearing problem with transport constraints, approximating network power flow by DC linearisation, outlined in \cite{kazempourLectureMarketClearing2021}.
+The convex optimization problem selected in step 0 was the day-ahead power market-clearing problem with transport constraints, following the formulation in \cite[pg. 11]{kazempourLectureMarketClearing2021}.
+
+For a set of generators $\{g\}$ with production costs $\{\cg\}$, demands $\{d\}$ with utility $\{\ud\}$, buses $\{n\}$, and connections $\{\tnm\}$, denote:
+ \begin{itemize}
+\item maximum generation for $g$ as $\PG$, maximum demand for $d$ as $\PD$, and maximum flow through connection $\tnm$ as $\FNM$
+\item the difference in voltage angle between buses $n$ and $m$ as $\theta_n - \theta_m$, the susceptance of their connection $\tnm$ as $\bnm$, and the (rough) approximation of flow between them as $\fnm = \bnm(\theta_n - \theta_m)$
+\item the set of generators and demands in bus $n$ as $\Psi_n$, and the set of buses connected to bus $n$ via transmission lines as $\Omega_n$
+\item $\theta_{n_0}$ as the reference voltage angle of some arbitrary bus $n_0$
+\end{itemize}
+
+\section{Primal problem}
+
+The primal problem then becomes the maximisation of social welfare (the sum of the producer and consumer surplus):
+\begin{equation}
+\max_{\pg,\pd,\theta_n} \sum_d \ud \pd - \sum_g \cg \pg 
+\end{equation}
+subject to:
+\begin{gather}
+0 \leq \pd \leq \PD \quad \quad \forall d \label{eq:prim_demand} \\
+0 \leq \pg \leq \PG \quad \forall g \label{eq:prim_supply} \\
+-\FNM  \leq \fnm \leq \FNM \quad \forall t_{n,m} \label{eq:prim_trans}\\
+\theta_{n_0} = 0 \quad \label{eq:prim_ref_theta} \\
+\fnm = \bnm(\theta_n - \theta_m) \quad \forall \tnm \label{eq:prim_flow} \\
+\sum_{d \in \Psi_n} \pd + \sum_{m \in \Omega_n} \fnm - \sum_{g \in \Psi_n} \pg = 0 \quad \forall n \label{eq:prim_balance}
+\end{gather}
+Note that unlike the original formulation the flows are represented as additional variables with their own bounds (\cref{eq:prim_trans}) and explicitly linked to the voltage angles (\cref{eq:prim_flow}).
+
+
 In order to expand the problem to a reasonable size, day-ahead bid and offer data for October 7, 2020 were downloaded from the Midcontinent ISO (MISO) Market Data site \cite{MISOMarketData}.
-The data format was interpreted according to the MISO Energy Markets Business Practices Manual \cite{MISOEnergyOperating2020}. However, some simplifications were made:
+The data format was mostly interpreted according to the MISO Energy Markets Business Practices Manual \cite{MISOEnergyOperating2020}. However, some simplifications were made:
 \begin{itemize}
 \item The day-ahead power market was simplified to economic participants and active power only, removing ancilliary services.
-\item Non-monotonic bid or offer curves were removed from the data set.
+\item Non-monotonic offer curves and negative price offers were removed from the data set.
 \item Binary variables were avoided, as directed on \cite[p. 14]{kazempourLectureMarketClearing2021}, and therefore: 
 \begin{itemize}
-\item All block bids were treated as continuous (slope bids)
+\item All slope bids were considered as stepwise bids
 \item Unit commitment constraints and costs were ignored
 \end{itemize}
+\item The network was simplified by grouping all generators and demands into regional zones
+\item Fixed (price taking) demands were represented with demand prices set to the price cap
+\item Offer curves were represented by independent generator variables for each segment of the curve (as curve prices increase monotonically, there is no need to bind variables in the same curve)
 \end{itemize}
 
+This resulted in a problem with 3617 generators, 310 demands (of which 268 were price-taking), 3 nodes, and 3 transmission lines; the size of the problem became 3933 variables (with their bounds) and 6 additional linear constraints.
+The problem was coded in Python using the MOSEK Fusion API \cite{mosekapsMOSEKFusionAPI2021}, and both run without transmission constraints and with a 5GW transmission limit\footnote{
+In the accompanying IPython notebooks, \texttt{proj1-primal-tu.ipynb} is the problem without constraints and \texttt{proj1-primal-tc.ipynb} includes the transmission constraints.
+Note that in both cases the MOSEK log lists 3934 variables; this is because it adds a variable constrained to equal 1.0 that is used internally.
+}; a summary of the results can be found in \cref{tab:summary}.
 
-The problem was coded in Python using the MOSEK Fusion API \cite{mosekapsMOSEKFusionAPI2021}.
+\begin{table}[htbp]
+    \centering
+    \subfloat[Unconstrained transmission]{
+\begin{tabular}{lrrr}
+\toprule
+region &  price (\$/MW) &  consumed (MW) &  supplied (MW) \\
+\midrule
+North   &          9.54 &        12854.2 &        31372.5 \\
+Central &          9.54 &        28181.2 &        18817.1 \\
+South   &          9.54 &        16367.5 &         7213.3 \\
+\bottomrule
+\end{tabular}
+}
+
+    \subfloat[Constrained transmission]{
+\begin{tabular}{lrrr}
+\toprule
+{} &  price (\$/MW) &  consumed (MW) &  supplied (MW) \\
+\midrule
+North   &          0.00 &        12854.2 &        22854.2 \\
+Central &         11.84 &        28178.1 &        23178.1 \\
+South   &         11.32 &        16367.5 &        11367.5 \\
+\bottomrule
+\end{tabular}
+}
+    \caption{Market clearing summary}
+    \label{tab:summary}
+\end{table}
+
+As anticipated, congestion of inter-region transmission causes prices to differ between nodes; in this particular constrained case, the marginal generating unit in the North region is zero-cost (such as wind or solar).
+As this was a relatively straightforward linear optimisation problem, and MOSEK deals with high numbers of variables more quickly than it does high numbers of constraints, the solver completed in less than 20ms in both cases.
+Since problem setup with the Fusion API took longer than the optimisation itself, this suggests that when repeatedly solving large numbers of cases, it will be more effective to set up the problem once, and only change parameters, than set up the problem once per iteration.
+
 
 
 
