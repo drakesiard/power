@@ -117,55 +117,50 @@ In order to produce correlated results, one sample per region was combined with 
 \begin{equation}
 \epsilon_{g,\omega} = \Phi^{-1}_{\mu,\sigma,s,\kappa} \left( \alpha X_{n,\omega} + (1 - \alpha) X_{g,\omega} \right) \quad \text{where} \quad X_{n,\omega}, X_{g,\omega} \sim U(0,1), \alpha=0.9
 \end{equation}
-The scaler $\epsilon_g$ was multiplied with the default scenario, and the whole process was repeated 100 times.
+The scaler $\epsilon_g$ was multiplied with the default scenario, and the whole process was repeated 1000 times.
+\cref{fig:gen_corr_same} shows the output distribution of two wind generators in the same region, and \cref{fig:gen_corr_diff} shows the joint distribution for generators in different regions.
+The univariate distributions are visibly fat-tailed (leptokurtic) and negatively skewed, with a shape directly comparable to \cite{hodgeWindPowerForecasting2012}.
 
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.45\textwidth}
+\includegraphics[width=\textwidth]{../output/jointplot_same_region.pdf}
+\caption{Same region}
+\label{fig:gen_corr_same}
+\end{subfigure}%
+\begin{subfigure}{0.45\textwidth}
+\includegraphics[width=\textwidth]{../output/jointplot_different_region.pdf}
+\caption{Different region}
+\label{fig:gen_corr_diff}
+\end{subfigure}
+\caption{Original data correlations}
+\end{figure}
+
+\section{Training and testing}
+
+Of the 1000 scenarios, the first 100 were used as a training set, to produce a day-ahead solution, and the remaining 900 as a test and validation set, using the fixed day-ahead solution from the training set\footnote{Implementation in \tt{proj2-stochastic-training.ipynb} and \tt{proj2-stochastic-test.ipynb}}.
+The training optimisation, with 346,336 constraints and 349,496 variables (before pre-solving), took 4.8 seconds; the test optimisation, with 3,086,107 constraints and 3,089,267 variables, took 9.1 seconds.
+In both cases, the actual optimisation time was dwarfed by the overhead in Python of problem setup, as it was in step 1.
+
+For both the test and training sets, the per-scenario utility was calculated:
 \begin{equation}
 U_\omega = \left( \sum_d \ud \pd - \sum_g \cg \pg \right) + \left( \sum_d \ushed \pdrt - \sum_g \cg \pgrt \right)
 \end{equation}
+\cref{fig:obj_dist} shows (normalised) histograms and density plots for the objective values of the test and training sets.
+Given that the scenarios are generated with a uniform seed distribution, any random sample of the scenario space is likely to be representative.
+In addition, the day-ahead solution from the training set came from a large (100) number of scenarios.
+It is therefore no surprise that the per-scenario objective values of the test and training data sets are a close visual match.
+More precisely, a (median-centered) Levene test on fails to reject the null hypothesis of equal variance ($p$-value: 0.22), and a two-sample $t$-test fails to reject the null hypothesis of equal means ($p$-value: 0.21).
 
+In summary, given forecast errors in line with the ones used above, the stochastic optimisation produces a something very close to an ideal day-ahead clearing solution.
+However, the extreme negative skew of the objective function values suggests that, depending on the system operator's goals, a more robust optimisation technique might be appropriate.
 
-
-
-\begin{table}[htbp]
-    \centering
-    \subfloat[Unconstrained transmission (objective value: 1.13974e+08)]{
-\begin{tabular}{lrrr}
-\toprule
-region &  price (\$/MW) &  consumed (MW) &  supplied (MW) \\
-\midrule
-North   &          9.54 &        12854.2 &        31372.5 \\
-Central &          9.54 &        28181.2 &        18817.1 \\
-South   &          9.54 &        16367.5 &         7213.3 \\
-\bottomrule
-\end{tabular}
-}
-
-    \subfloat[Constrained transmission (objective value: 1.13911e+08)]{
-\begin{tabular}{lrrr}
-\toprule
-{} &  price (\$/MW) &  consumed (MW) &  supplied (MW) \\
-\midrule
-North   &          0.00 &        12854.2 &        22854.2 \\
-Central &         11.84 &        28178.1 &        23178.1 \\
-South   &         11.32 &        16367.5 &        11367.5 \\
-\bottomrule
-\end{tabular}
-}
-    \caption{Market clearing summary}
-    \label{tab:summary}
-\end{table}
-
-As anticipated, congestion of inter-region transmission causes prices to differ between nodes; in this particular constrained case, the marginal generating unit in the North region is zero-cost (such as wind or solar).
-Transmission constraints, unsurprisingly, also reduce the objective value (the total social welfare).
-As this was a relatively straightforward linear optimisation problem, and MOSEK deals with high numbers of variables more quickly than it does high numbers of constraints, the solver completed in less than 20ms in both cases.
-Since problem setup with the Fusion API took longer than the optimisation itself, this suggests that when repeatedly solving large numbers of cases, it will be more effective to set up the problem once, and only change parameters, than set up the problem once per iteration.
-
-
-
-
-\FloatBarrier
-
-
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{../output/obj_distribution.pdf}
+\caption{Objective function distribution}
+\label{fig:obj_dist}
+\end{figure}
 
 \renewcommand{\refname}{\section{References}}.
 \bibliography{DTU31792}
