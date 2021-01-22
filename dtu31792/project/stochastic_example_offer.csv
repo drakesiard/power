@@ -1,0 +1,4 @@
+id,node,capacity (MW),offer ($/MW),type
+G1,Bus 1,100.0,10.0,inflexible
+WP,Bus 1,70.0,0.0,wind
+G2,Bus 2,30.0,20.0,flexible
