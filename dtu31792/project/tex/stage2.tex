@@ -69,7 +69,7 @@ The problem is still the maximisation of social welfare (the sum of the producer
 \max_{\pg,\pd,\theta_n} \left[ \sum_d \ud \pd - \sum_g \cg \pg \right] + 
 \sum_\omega \pw \left( \sum_d \ushed \pdrt - \sum_g \cg \pgrt \right)
 \end{equation}
-subject to the original day ahead constraints:
+In this case $U_{shed}$ is equal to the inferred utility of the inelastic load, \$2000/MW. The objective is optimised subject to both the original day ahead constraints:
 \begin{gather}
 0 \leq \pd \leq \PD \quad \forall d \label{eq:da_demand} \\
 0 \leq \pg \leq \PG \quad \forall g \label{eq:da_supply} \\
@@ -95,20 +95,36 @@ and to the real-time market constraints per scenario:
 
 Once again, the flows are represented as additional variables with their own bounds (\cref{eq:da_trans,eq:rt_trans}) and explicitly linked to the voltage angles (\cref{eq:da_flow,eq:rt_flow}) for ease of retrieval in the implementation.
 Variable wind production is represented as a change in production which will either be used or spilled, with the net change represented by $\pgrt$ (\cref{eq:rt_wind}).
+No attempt was made to price flexibility in the objective: it was assumed that flexible real-time generation costs were symmetric and identical to day-ahead costs.
+This problem was implemented in MOSEK's Fusion API, as in step 1.
 
 \section{Scenario generation}
 \label{sec:scenario}
 
-As before, the day-ahead bid and offer data for October 7, 2020 from the MISO Market Data site \cite{MISOMarketData} were used as a base, with some clean-up and the following additions:
-\begin{itemize}
-\item generators were divided into three categories: flexible, inflexible, and wind; generators with an offer of zero were assumed to be wind, and those with an offer price above the 90th percentile were assumed to be flexible
-\item flexible generators were assumed flexible over their entire generation range, while wind generators could only spill wind from their day-ahead allocation
-\end{itemize}
-No attempt was made to price the flexibility: it was assumed that flexible generation costs were symmetric.
+As before, the day-ahead bid and offer data for 12:00-01:00 on October 7, 2020 from the MISO Market Data site \cite{MISOMarketData} were used as a base, with some additional clean-up (such as excluding generators with the ``Unit Available Flag" unset).
+Generators were divided into three categories: flexible, inflexible, and wind; generators with an offer of zero were assumed to be wind, and those with an offer price above the 75th percentile were assumed to be flexible.
+Flexible generators were assumed flexible over their entire generation range (from zero to the offered capacity).
 
-$\blitza$
+For wind generation, MISO historical hourly wind generation data for that hour reported a total of 11937.76 MWh, which was approximately three times the offered capacity attributed to wind generators.
+The default scenario was constructed by scaling the bid capacity of each (inferred) wind generator by a common factor so that the total wind capacity matched the historical total wind generation.
 
-\cite{hodgeWindPowerForecasting2012}
+To create the scenario sets, reverse forecast error was then applied. 
+\cite{hodgeWindPowerForecasting2012} reports the first four moments of forecast error for the ERCOT interconnection in Texas for the year 2010.
+By sampling a uniform random variable mapped through the inverse CDF of a distribution\footnote{
+See \url{https://www.statsmodels.org/stable/generated/statsmodels.sandbox.distributions.extras.pdf_mvsk.html} for more details.
+} matching those moments, a distribution of wind levels that matches the distribution of the empirical forecast error can be derived. 
+In order to produce correlated results, one sample per region was combined with one sample per generator to produce the per-generator per-scenario scaler:
+\begin{equation}
+\epsilon_{g,\omega} = \Phi^{-1}_{\mu,\sigma,s,\kappa} \left( \alpha X_{n,\omega} + (1 - \alpha) X_{g,\omega} \right) \quad \text{where} \quad X_{n,\omega}, X_{g,\omega} \sim U(0,1), \alpha=0.9
+\end{equation}
+The scaler $\epsilon_g$ was multiplied with the default scenario, and the whole process was repeated 100 times.
+
+\begin{equation}
+U_\omega = \left( \sum_d \ud \pd - \sum_g \cg \pg \right) + \left( \sum_d \ushed \pdrt - \sum_g \cg \pgrt \right)
+\end{equation}
+
+
+
 
 \begin{table}[htbp]
     \centering
@@ -143,6 +159,9 @@ As anticipated, congestion of inter-region transmission causes prices to differ 
 Transmission constraints, unsurprisingly, also reduce the objective value (the total social welfare).
 As this was a relatively straightforward linear optimisation problem, and MOSEK deals with high numbers of variables more quickly than it does high numbers of constraints, the solver completed in less than 20ms in both cases.
 Since problem setup with the Fusion API took longer than the optimisation itself, this suggests that when repeatedly solving large numbers of cases, it will be more effective to set up the problem once, and only change parameters, than set up the problem once per iteration.
+
+
+
 
 \FloatBarrier
 

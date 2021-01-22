@@ -1,0 +1,839 @@
+GAMS 33.2.0  r4f23b21 Released Dec  1, 2020 LEX-LEG x86 64bit/Linux - 01/22/21 10:31:42 Page 1
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+C o m p i l a t i o n
+
+
+   1    sets
+   2    i   conventional generators /i1*i2/
+   3    d   inelastic loads /d1/
+   4    n   buses /n1*n2/
+   5    s   scenarios /s1*s4/
+   6    k   wind power generators /k1/
+   7    slack(n)   /n1/
+   8    Mapi(i,n) /i1.n1 , i2.n2/
+   9    Mapd(d,n) /d1.n1/
+  10    Mapnm(n,n) /n1.n2 , n2.n1/
+  11    Mapk(k,n) /k1.n2/
+  12    alias (n,m);
+  13   
+  14    parameters
+  15    W_max(k)   Wind power installed capacity;
+  16   
+  17    parameters
+  18    phi(s) probability of scenarios /
+  19    s1  0.25
+  20    s2  0.25
+  21    s3  0.25
+  22    s4  0.25/
+  23   
+  24    L(d) Load level /d1 120/
+  25    V(d) value of lost load /d1 80/;
+  26   
+  27    TABLE GDATA(i,*) generators' input data
+  28           Pmax        C       Rmax
+  29    i1     100        10       0
+  30    i2     30         20       30;
+  31    Table W(k,s)  Wind realizatio under different scenarios
+  32           s1         s2         s3       s4
+  33    k1     30         60         70       10;
+  34    Table Fmax(n,n)   Transmission lines capacity
+  35           n1         n2
+  36    n1     0          100
+  37    n2     100        0;
+  38    Table B(n,n)   Transmission lines susceptance
+  39           n1         n2
+  40    n1     0          500
+  41    n2     500        0;
+  42    W_max(k)=70;
+  43    variables
+  44    cost           Total expected system cost (DA + RT)
+  45    theta_DA(n)    Voltage angles in DA
+  46    f_DA(n,m)      Power flows in DA
+  47    f_RT(n,m,s)    Power flows in RT
+  48    theta_RT(n,s)  Voltage angles in RT
+  49    time           CPU time
+  50    r(i,s)         Power adjustment of generator i in RT under scenario s;
+  51    positive variables
+  52    L_shed(d,s)   Curtailed load
+  53    P(i)          DA dispatch of generators
+  54    P_W(k)        Wind dispatch in DA
+  55    P_spill(k,s)  Wind spillage;
+  56   
+  57    equations
+  58    costfn,node_DA,Pmax,kmax,flow_DA,floW_max_DA,slack_DA,node_RT,RUmax,RDmax,
+  59    generation_min,generation_max,flow_RT,floW_max_RT,shedding,spillage,
+  60    slack_RT;
+  61   
+  62    costfn..cost=e=sum(s,phi(s)*{
+  63                  [sum(i,GDATA(i,'C')*r(i,s))]
+  64                 +[sum(d,V(d)*L_shed(d,s))]})+[sum(i,GDATA(i,'C')*P(i))];
+  65   
+  66  * DA constraints
+  67    node_DA(n)..sum(i$Mapi(i,n),P(i))+sum(k$Mapk(k,n),P_W(k))
+  68               -sum(d$Mapd(d,n),L(d))-sum(m$Mapnm(n,m),f_DA(n,m))=e=0;
+  69   
+  70    Pmax(i)..P(i)=l=GDATA(i,'Pmax');
+  71    kmax(k)..P_W(k)=l=W_max(k);
+  72    flow_DA(n,m)$Mapnm(n,m)..f_DA(n,m)=e=B(n,m)*(theta_DA(n)-theta_DA(m));
+  73    floW_max_DA(n,m)$Mapnm(n,m)..f_DA(n,m)=l=Fmax(n,m);
+  74    slack_DA..theta_DA('n1')=e=0;
+  75   
+  76  * RT constraints
+  77    node_RT(n,s)..sum(i$Mapi(i,n),r(i,s))
+  78                 +sum(k$Mapk(k,n),W(k,s)-P_W(k)-P_spill(k,s))
+  79                 +sum(d$Mapd(d,n),L_shed(d,s))
+  80                 -sum(m$Mapnm(n,m),f_RT(n,m,s)-f_DA(n,m))=e=0;
+  81   
+  82    RUmax(i,s)..r(i,s)=l=+GDATA(i,'Rmax');
+  83    RDmax(i,s)..r(i,s)=g=-GDATA(i,'Rmax');
+  84    generation_min(i,s)..[P(i)+r(i,s)]=g=0;
+  85    generation_max(i,s)..[P(i)+r(i,s)]=l=GDATA(i,'Pmax');
+  86    flow_RT(n,m,s)$Mapnm(n,m)..f_RT(n,m,s)=e=B(n,m)*(theta_RT(n,s)-theta_RT(m,s));
+  87    floW_max_RT(n,m,s)$Mapnm(n,m)..f_RT(n,m,s)=l=Fmax(n,m);
+  88    shedding(d,s)..L_shed(d,s)=l=L(d);
+  89    spillage(k,s)..P_spill(k,s)=l=W(k,s);
+  90    slack_RT(s)..theta_RT('n1',s)=e=0;
+  91   
+  92    model Stochastic_clearing / all / ;
+  93    solve Stochastic_clearing using lp minimizing cost;
+  94    time.l = Stochastic_clearing.resusd;
+  95   
+  96    parameters
+  97    LambdaN_DA(n)
+  98    LambdaN_RT(n,s);
+  99    LambdaN_DA(n)=node_DA.m(n);
+ 100    LambdaN_RT(n,s)=node_RT.m(n,s)/phi(s);
+ 101   
+ 102    display
+ 103    cost.l, LambdaN_DA, LambdaN_RT, P_W.l, P.l, r.l, p_spill.l, L_shed.l, time.l;
+ 104   
+
+
+COMPILATION TIME     =        0.001 SECONDS      3 MB  33.2.0 r4f23b21 LEX-LEG
+GAMS 33.2.0  r4f23b21 Released Dec  1, 2020 LEX-LEG x86 64bit/Linux - 01/22/21 10:31:42 Page 2
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+Equation Listing    SOLVE Stochastic_clearing Using LP From line 93
+
+
+---- costfn  =E=  
+
+costfn..  cost - 2.5*r(i1,s1) - 2.5*r(i1,s2) - 2.5*r(i1,s3) - 2.5*r(i1,s4) - 5*r(i2,s1) - 5*r(i2,s2) - 5*r(i2,s3) - 5*r(i2,s4) - 20*L_shed(d1,s1) - 20*L_shed(d1,s2) - 20*L_shed(d1,s3) - 20*L_shed(d1,s4) - 10*P(i1) - 20*P(i2) =E= 0 ; (LHS = 0)
+     
+
+---- node_DA  =E=  
+
+node_DA(n1)..  - f_DA(n1,n2) + P(i1) =E= 120 ; (LHS = 0, INFES = 120 ****)
+     
+node_DA(n2)..  - f_DA(n2,n1) + P(i2) + P_W(k1) =E= 0 ; (LHS = 0)
+     
+
+---- Pmax  =L=  
+
+Pmax(i1)..  P(i1) =L= 100 ; (LHS = 0)
+     
+Pmax(i2)..  P(i2) =L= 30 ; (LHS = 0)
+     
+
+---- kmax  =L=  
+
+kmax(k1)..  P_W(k1) =L= 70 ; (LHS = 0)
+     
+
+---- flow_DA  =E=  
+
+flow_DA(n1,n2)..  - 500*theta_DA(n1) + 500*theta_DA(n2) + f_DA(n1,n2) =E= 0 ; (LHS = 0)
+     
+flow_DA(n2,n1)..  500*theta_DA(n1) - 500*theta_DA(n2) + f_DA(n2,n1) =E= 0 ; (LHS = 0)
+     
+
+---- floW_max_DA  =L=  
+
+floW_max_DA(n1,n2)..  f_DA(n1,n2) =L= 100 ; (LHS = 0)
+     
+floW_max_DA(n2,n1)..  f_DA(n2,n1) =L= 100 ; (LHS = 0)
+     
+
+---- slack_DA  =E=  
+
+slack_DA..  theta_DA(n1) =E= 0 ; (LHS = 0)
+     
+
+---- node_RT  =E=  
+
+node_RT(n1,s1)..  f_DA(n1,n2) - f_RT(n1,n2,s1) + r(i1,s1) + L_shed(d1,s1) =E= 0 ; (LHS = 0)
+     
+node_RT(n1,s2)..  f_DA(n1,n2) - f_RT(n1,n2,s2) + r(i1,s2) + L_shed(d1,s2) =E= 0 ; (LHS = 0)
+     
+node_RT(n1,s3)..  f_DA(n1,n2) - f_RT(n1,n2,s3) + r(i1,s3) + L_shed(d1,s3) =E= 0 ; (LHS = 0)
+     
+REMAINING 5 ENTRIES SKIPPED
+
+
+---- RUmax  =L=  
+
+RUmax(i1,s1)..  r(i1,s1) =L= 0 ; (LHS = 0)
+     
+RUmax(i1,s2)..  r(i1,s2) =L= 0 ; (LHS = 0)
+     
+RUmax(i1,s3)..  r(i1,s3) =L= 0 ; (LHS = 0)
+     
+REMAINING 5 ENTRIES SKIPPED
+
+
+---- RDmax  =G=  
+
+RDmax(i1,s1)..  r(i1,s1) =G= 0 ; (LHS = 0)
+     
+RDmax(i1,s2)..  r(i1,s2) =G= 0 ; (LHS = 0)
+     
+RDmax(i1,s3)..  r(i1,s3) =G= 0 ; (LHS = 0)
+     
+REMAINING 5 ENTRIES SKIPPED
+
+
+---- generation_min  =G=  
+
+generation_min(i1,s1)..  r(i1,s1) + P(i1) =G= 0 ; (LHS = 0)
+     
+generation_min(i1,s2)..  r(i1,s2) + P(i1) =G= 0 ; (LHS = 0)
+     
+generation_min(i1,s3)..  r(i1,s3) + P(i1) =G= 0 ; (LHS = 0)
+     
+REMAINING 5 ENTRIES SKIPPED
+
+
+---- generation_max  =L=  
+
+generation_max(i1,s1)..  r(i1,s1) + P(i1) =L= 100 ; (LHS = 0)
+     
+generation_max(i1,s2)..  r(i1,s2) + P(i1) =L= 100 ; (LHS = 0)
+     
+generation_max(i1,s3)..  r(i1,s3) + P(i1) =L= 100 ; (LHS = 0)
+     
+REMAINING 5 ENTRIES SKIPPED
+
+
+---- flow_RT  =E=  
+
+flow_RT(n1,n2,s1)..  f_RT(n1,n2,s1) - 500*theta_RT(n1,s1) + 500*theta_RT(n2,s1) =E= 0 ; (LHS = 0)
+     
+flow_RT(n1,n2,s2)..  f_RT(n1,n2,s2) - 500*theta_RT(n1,s2) + 500*theta_RT(n2,s2) =E= 0 ; (LHS = 0)
+     
+flow_RT(n1,n2,s3)..  f_RT(n1,n2,s3) - 500*theta_RT(n1,s3) + 500*theta_RT(n2,s3) =E= 0 ; (LHS = 0)
+     
+REMAINING 5 ENTRIES SKIPPED
+
+
+---- floW_max_RT  =L=  
+
+floW_max_RT(n1,n2,s1)..  f_RT(n1,n2,s1) =L= 100 ; (LHS = 0)
+     
+floW_max_RT(n1,n2,s2)..  f_RT(n1,n2,s2) =L= 100 ; (LHS = 0)
+     
+floW_max_RT(n1,n2,s3)..  f_RT(n1,n2,s3) =L= 100 ; (LHS = 0)
+     
+REMAINING 5 ENTRIES SKIPPED
+
+
+---- shedding  =L=  
+
+shedding(d1,s1)..  L_shed(d1,s1) =L= 120 ; (LHS = 0)
+     
+shedding(d1,s2)..  L_shed(d1,s2) =L= 120 ; (LHS = 0)
+     
+shedding(d1,s3)..  L_shed(d1,s3) =L= 120 ; (LHS = 0)
+     
+REMAINING ENTRY SKIPPED
+
+
+---- spillage  =L=  
+
+spillage(k1,s1)..  P_spill(k1,s1) =L= 30 ; (LHS = 0)
+     
+spillage(k1,s2)..  P_spill(k1,s2) =L= 60 ; (LHS = 0)
+     
+spillage(k1,s3)..  P_spill(k1,s3) =L= 70 ; (LHS = 0)
+     
+REMAINING ENTRY SKIPPED
+
+
+---- slack_RT  =E=  
+
+slack_RT(s1)..  theta_RT(n1,s1) =E= 0 ; (LHS = 0)
+     
+slack_RT(s2)..  theta_RT(n1,s2) =E= 0 ; (LHS = 0)
+     
+slack_RT(s3)..  theta_RT(n1,s3) =E= 0 ; (LHS = 0)
+     
+REMAINING ENTRY SKIPPED
+
+GAMS 33.2.0  r4f23b21 Released Dec  1, 2020 LEX-LEG x86 64bit/Linux - 01/22/21 10:31:42 Page 3
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+Column Listing      SOLVE Stochastic_clearing Using LP From line 93
+
+
+---- cost  Total expected system cost (DA + RT)
+
+cost
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+        1       costfn
+
+
+---- theta_DA  Voltage angles in DA
+
+theta_DA(n1)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+     -500       flow_DA(n1,n2)
+      500       flow_DA(n2,n1)
+        1       slack_DA
+
+theta_DA(n2)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+      500       flow_DA(n1,n2)
+     -500       flow_DA(n2,n1)
+
+
+---- f_DA  Power flows in DA
+
+f_DA(n1,n2)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+       -1       node_DA(n1)
+        1       flow_DA(n1,n2)
+        1       floW_max_DA(n1,n2)
+        1       node_RT(n1,s1)
+        1       node_RT(n1,s2)
+        1       node_RT(n1,s3)
+        1       node_RT(n1,s4)
+
+f_DA(n2,n1)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+       -1       node_DA(n2)
+        1       flow_DA(n2,n1)
+        1       floW_max_DA(n2,n1)
+        1       node_RT(n2,s1)
+        1       node_RT(n2,s2)
+        1       node_RT(n2,s3)
+        1       node_RT(n2,s4)
+
+
+---- f_RT  Power flows in RT
+
+f_RT(n1,n2,s1)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+       -1       node_RT(n1,s1)
+        1       flow_RT(n1,n2,s1)
+        1       floW_max_RT(n1,n2,s1)
+
+f_RT(n1,n2,s2)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+       -1       node_RT(n1,s2)
+        1       flow_RT(n1,n2,s2)
+        1       floW_max_RT(n1,n2,s2)
+
+f_RT(n1,n2,s3)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+       -1       node_RT(n1,s3)
+        1       flow_RT(n1,n2,s3)
+        1       floW_max_RT(n1,n2,s3)
+
+REMAINING 5 ENTRIES SKIPPED
+
+---- theta_RT  Voltage angles in RT
+
+theta_RT(n1,s1)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+     -500       flow_RT(n1,n2,s1)
+      500       flow_RT(n2,n1,s1)
+        1       slack_RT(s1)
+
+theta_RT(n1,s2)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+     -500       flow_RT(n1,n2,s2)
+      500       flow_RT(n2,n1,s2)
+        1       slack_RT(s2)
+
+theta_RT(n1,s3)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+     -500       flow_RT(n1,n2,s3)
+      500       flow_RT(n2,n1,s3)
+        1       slack_RT(s3)
+
+REMAINING 5 ENTRIES SKIPPED
+
+---- r  Power adjustment of generator i in RT under scenario s
+
+r(i1,s1)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+       -2.5     costfn
+        1       node_RT(n1,s1)
+        1       RUmax(i1,s1)
+        1       RDmax(i1,s1)
+        1       generation_min(i1,s1)
+        1       generation_max(i1,s1)
+
+r(i1,s2)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+       -2.5     costfn
+        1       node_RT(n1,s2)
+        1       RUmax(i1,s2)
+        1       RDmax(i1,s2)
+        1       generation_min(i1,s2)
+        1       generation_max(i1,s2)
+
+r(i1,s3)
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+       -2.5     costfn
+        1       node_RT(n1,s3)
+        1       RUmax(i1,s3)
+        1       RDmax(i1,s3)
+        1       generation_min(i1,s3)
+        1       generation_max(i1,s3)
+
+REMAINING 5 ENTRIES SKIPPED
+
+---- L_shed  Curtailed load
+
+L_shed(d1,s1)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+      -20       costfn
+        1       node_RT(n1,s1)
+        1       shedding(d1,s1)
+
+L_shed(d1,s2)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+      -20       costfn
+        1       node_RT(n1,s2)
+        1       shedding(d1,s2)
+
+L_shed(d1,s3)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+      -20       costfn
+        1       node_RT(n1,s3)
+        1       shedding(d1,s3)
+
+REMAINING ENTRY SKIPPED
+
+---- P  DA dispatch of generators
+
+P(i1)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+      -10       costfn
+        1       node_DA(n1)
+        1       Pmax(i1)
+        1       generation_min(i1,s1)
+        1       generation_min(i1,s2)
+        1       generation_min(i1,s3)
+        1       generation_min(i1,s4)
+        1       generation_max(i1,s1)
+        1       generation_max(i1,s2)
+        1       generation_max(i1,s3)
+        1       generation_max(i1,s4)
+
+P(i2)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+      -20       costfn
+        1       node_DA(n2)
+        1       Pmax(i2)
+        1       generation_min(i2,s1)
+        1       generation_min(i2,s2)
+        1       generation_min(i2,s3)
+        1       generation_min(i2,s4)
+        1       generation_max(i2,s1)
+        1       generation_max(i2,s2)
+        1       generation_max(i2,s3)
+        1       generation_max(i2,s4)
+
+
+---- P_W  Wind dispatch in DA
+
+P_W(k1)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+        1       node_DA(n2)
+        1       kmax(k1)
+       -1       node_RT(n2,s1)
+       -1       node_RT(n2,s2)
+       -1       node_RT(n2,s3)
+       -1       node_RT(n2,s4)
+
+
+---- P_spill  Wind spillage
+
+P_spill(k1,s1)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+       -1       node_RT(n2,s1)
+        1       spillage(k1,s1)
+
+P_spill(k1,s2)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+       -1       node_RT(n2,s2)
+        1       spillage(k1,s2)
+
+P_spill(k1,s3)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+       -1       node_RT(n2,s3)
+        1       spillage(k1,s3)
+
+REMAINING ENTRY SKIPPED
+GAMS 33.2.0  r4f23b21 Released Dec  1, 2020 LEX-LEG x86 64bit/Linux - 01/22/21 10:31:42 Page 4
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+Model Statistics    SOLVE Stochastic_clearing Using LP From line 93
+
+
+MODEL STATISTICS
+
+BLOCKS OF EQUATIONS          17     SINGLE EQUATIONS           79
+BLOCKS OF VARIABLES          10     SINGLE VARIABLES           40
+NON ZERO ELEMENTS           160
+
+
+GENERATION TIME      =        0.009 SECONDS      4 MB  33.2.0 r4f23b21 LEX-LEG
+GAMS 33.2.0  r4f23b21 Released Dec  1, 2020 LEX-LEG x86 64bit/Linux - 01/22/21 10:31:42 Page 5
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+Solution Report     SOLVE Stochastic_clearing Using LP From line 93
+
+
+               S O L V E      S U M M A R Y
+
+     MODEL   Stochastic_clearing   OBJECTIVE  cost
+     TYPE    LP                    DIRECTION  MINIMIZE
+     SOLVER  CPLEX                 FROM LINE  93
+
+**** SOLVER STATUS     1 Normal Completion         
+**** MODEL STATUS      1 Optimal                   
+**** OBJECTIVE VALUE             1000.0000
+
+ RESOURCE USAGE, LIMIT          0.073 10000000000.000
+ ITERATION COUNT, LIMIT        10    2147483647
+--- GAMS/Cplex Link licensed for continuous and discrete problems.
+--- GMO memory 0.51 Mb (peak 0.51 Mb)
+--- Dictionary memory 0.00 Mb
+--- Cplex 12.10.0.0 link memory 0.00 Mb (peak 0.01 Mb)
+--- Starting Cplex
+
+
+--- LP status (1): optimal.
+--- Cplex Time: 0.02sec (det. 0.10 ticks)
+
+
+Optimal solution found
+Objective:         1000.000000
+
+
+                           LOWER          LEVEL          UPPER         MARGINAL
+
+---- EQU costfn              .              .              .             1.0000      
+
+---- EQU node_DA  
+
+          LOWER          LEVEL          UPPER         MARGINAL
+
+n1       120.0000       120.0000       120.0000        10.0000      
+n2          .              .              .            10.0000      
+
+---- EQU Pmax  
+
+          LOWER          LEVEL          UPPER         MARGINAL
+
+i1        -INF           80.0000       100.0000          .          
+i2        -INF           30.0000        30.0000         EPS         
+
+---- EQU kmax  
+
+          LOWER          LEVEL          UPPER         MARGINAL
+
+k1        -INF           10.0000        70.0000          .          
+
+---- EQU flow_DA  
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+n1.n2          .              .              .             EPS         
+n2.n1          .              .              .             EPS         
+
+---- EQU floW_max_DA  
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+n1.n2        -INF          -40.0000       100.0000          .          
+n2.n1        -INF           40.0000       100.0000          .          
+
+                           LOWER          LEVEL          UPPER         MARGINAL
+
+---- EQU slack_DA            .              .              .             EPS         
+
+---- EQU node_RT  
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+n1.s1          .              .              .             5.0000      
+n1.s2          .              .              .             EPS         
+n1.s3          .              .              .             EPS         
+n1.s4          .              .              .             5.0000      
+n2.s1       -30.0000       -30.0000       -30.0000         5.0000      
+n2.s2       -60.0000       -60.0000       -60.0000         EPS         
+n2.s3       -70.0000       -70.0000       -70.0000         EPS         
+n2.s4       -10.0000       -10.0000       -10.0000         5.0000      
+
+---- EQU RUmax  
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+i1.s1        -INF             .              .            -2.5000      
+i1.s2        -INF             .              .              .          
+i1.s3        -INF             .              .              .          
+i1.s4        -INF             .              .            -2.5000      
+i2.s1        -INF          -20.0000        30.0000          .          
+i2.s2        -INF          -30.0000        30.0000          .          
+i2.s3        -INF          -30.0000        30.0000          .          
+i2.s4        -INF             .            30.0000          .          
+
+---- EQU RDmax  
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+i1.s1          .              .            +INF             .          
+i1.s2          .              .            +INF            2.5000      
+i1.s3          .              .            +INF            2.5000      
+i1.s4          .              .            +INF             .          
+i2.s1       -30.0000       -20.0000        +INF             .          
+i2.s2       -30.0000       -30.0000        +INF             .          
+i2.s3       -30.0000       -30.0000        +INF             .          
+i2.s4       -30.0000          .            +INF             .          
+
+---- EQU generation_min  
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+i1.s1          .            80.0000        +INF             .          
+i1.s2          .            80.0000        +INF             .          
+i1.s3          .            80.0000        +INF             .          
+i1.s4          .            80.0000        +INF             .          
+i2.s1          .            10.0000        +INF             .          
+i2.s2          .              .            +INF            5.0000      
+i2.s3          .              .            +INF            5.0000      
+i2.s4          .            30.0000        +INF             .          
+
+---- EQU generation_max  
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+i1.s1        -INF           80.0000       100.0000          .          
+i1.s2        -INF           80.0000       100.0000          .          
+i1.s3        -INF           80.0000       100.0000          .          
+i1.s4        -INF           80.0000       100.0000          .          
+i2.s1        -INF           10.0000        30.0000          .          
+i2.s2        -INF             .            30.0000          .          
+i2.s3        -INF             .            30.0000          .          
+i2.s4        -INF           30.0000        30.0000         EPS         
+
+---- EQU flow_RT  
+
+                LOWER          LEVEL          UPPER         MARGINAL
+
+n1.n2.s1          .              .              .             5.0000      
+n1.n2.s2          .              .              .             EPS         
+n1.n2.s3          .              .              .             EPS         
+n1.n2.s4          .              .              .             5.0000      
+n2.n1.s1          .              .              .             5.0000      
+n2.n1.s2          .              .              .             EPS         
+n2.n1.s3          .              .              .             EPS         
+n2.n1.s4          .              .              .             5.0000      
+
+---- EQU floW_max_RT  
+
+                LOWER          LEVEL          UPPER         MARGINAL
+
+n1.n2.s1        -INF          -40.0000       100.0000          .          
+n1.n2.s2        -INF          -40.0000       100.0000          .          
+n1.n2.s3        -INF          -40.0000       100.0000          .          
+n1.n2.s4        -INF          -40.0000       100.0000          .          
+n2.n1.s1        -INF           40.0000       100.0000          .          
+n2.n1.s2        -INF           40.0000       100.0000          .          
+n2.n1.s3        -INF           40.0000       100.0000          .          
+n2.n1.s4        -INF           40.0000       100.0000          .          
+
+---- EQU shedding  
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+d1.s1        -INF             .           120.0000          .          
+d1.s2        -INF             .           120.0000          .          
+d1.s3        -INF             .           120.0000          .          
+d1.s4        -INF             .           120.0000          .          
+
+---- EQU spillage  
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+k1.s1        -INF             .            30.0000          .          
+k1.s2        -INF           20.0000        60.0000          .          
+k1.s3        -INF           30.0000        70.0000          .          
+k1.s4        -INF             .            10.0000          .          
+
+---- EQU slack_RT  
+
+          LOWER          LEVEL          UPPER         MARGINAL
+
+s1          .              .              .             EPS         
+s2          .              .              .             EPS         
+s3          .              .              .             EPS         
+s4          .              .              .             EPS         
+
+                           LOWER          LEVEL          UPPER         MARGINAL
+
+---- VAR cost              -INF         1000.0000        +INF             .          
+
+  cost  Total expected system cost (DA + RT)
+
+---- VAR theta_DA  Voltage angles in DA
+
+          LOWER          LEVEL          UPPER         MARGINAL
+
+n1        -INF             .            +INF             .          
+n2        -INF            0.0800        +INF             .          
+
+---- VAR f_DA  Power flows in DA
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+n1.n2        -INF          -40.0000        +INF             .          
+n2.n1        -INF           40.0000        +INF             .          
+
+---- VAR f_RT  Power flows in RT
+
+                LOWER          LEVEL          UPPER         MARGINAL
+
+n1.n2.s1        -INF          -40.0000        +INF             .          
+n1.n2.s2        -INF          -40.0000        +INF             .          
+n1.n2.s3        -INF          -40.0000        +INF             .          
+n1.n2.s4        -INF          -40.0000        +INF             .          
+n2.n1.s1        -INF           40.0000        +INF             .          
+n2.n1.s2        -INF           40.0000        +INF             .          
+n2.n1.s3        -INF           40.0000        +INF             .          
+n2.n1.s4        -INF           40.0000        +INF             .          
+
+---- VAR theta_RT  Voltage angles in RT
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+n1.s1        -INF             .            +INF             .          
+n1.s2        -INF             .            +INF             .          
+n1.s3        -INF             .            +INF             .          
+n1.s4        -INF             .            +INF             .          
+n2.s1        -INF            0.0800        +INF             .          
+n2.s2        -INF            0.0800        +INF             .          
+n2.s3        -INF            0.0800        +INF             .          
+n2.s4        -INF            0.0800        +INF             .          
+
+---- VAR r  Power adjustment of generator i in RT under scenario s
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+i1.s1        -INF             .            +INF             .          
+i1.s2        -INF             .            +INF             .          
+i1.s3        -INF             .            +INF             .          
+i1.s4        -INF             .            +INF             .          
+i2.s1        -INF          -20.0000        +INF             .          
+i2.s2        -INF          -30.0000        +INF             .          
+i2.s3        -INF          -30.0000        +INF             .          
+i2.s4        -INF             .            +INF             .          
+
+---- VAR L_shed  Curtailed load
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+d1.s1          .              .            +INF           15.0000      
+d1.s2          .              .            +INF           20.0000      
+d1.s3          .              .            +INF           20.0000      
+d1.s4          .              .            +INF           15.0000      
+
+---- VAR P  DA dispatch of generators
+
+          LOWER          LEVEL          UPPER         MARGINAL
+
+i1          .            80.0000        +INF             .          
+i2          .            30.0000        +INF             .          
+
+---- VAR P_W  Wind dispatch in DA
+
+          LOWER          LEVEL          UPPER         MARGINAL
+
+k1          .            10.0000        +INF             .          
+
+---- VAR P_spill  Wind spillage
+
+             LOWER          LEVEL          UPPER         MARGINAL
+
+k1.s1          .              .            +INF            5.0000      
+k1.s2          .            20.0000        +INF             .          
+k1.s3          .            30.0000        +INF             .          
+k1.s4          .              .            +INF            5.0000      
+
+
+**** REPORT SUMMARY :        0     NONOPT
+                             0 INFEASIBLE
+                             0  UNBOUNDED
+GAMS 33.2.0  r4f23b21 Released Dec  1, 2020 LEX-LEG x86 64bit/Linux - 01/22/21 10:31:42 Page 6
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+E x e c u t i o n
+
+
+----    103 VARIABLE cost.L                =     1000.000  Total expected system cost (DA + RT)
+
+----    103 PARAMETER LambdaN_DA  
+
+n1 10.000,    n2 10.000
+
+
+----    103 PARAMETER LambdaN_RT  
+
+            s1          s2          s3          s4
+
+n1      20.000         EPS         EPS      20.000
+n2      20.000         EPS         EPS      20.000
+
+
+----    103 VARIABLE P_W.L  Wind dispatch in DA
+
+k1 10.000
+
+
+----    103 VARIABLE P.L  DA dispatch of generators
+
+i1 80.000,    i2 30.000
+
+
+----    103 VARIABLE r.L  Power adjustment of generator i in RT under scenario s
+
+            s1          s2          s3
+
+i2     -20.000     -30.000     -30.000
+
+
+----    103 VARIABLE P_spill.L  Wind spillage
+
+            s2          s3
+
+k1      20.000      30.000
+
+
+----    103 VARIABLE L_shed.L  Curtailed load
+
+                      ( ALL       0.000 )
+
+
+----    103 VARIABLE time.L                =        0.073  CPU time
+
+
+EXECUTION TIME       =        0.090 SECONDS      4 MB  33.2.0 r4f23b21 LEX-LEG
+
+
+USER: Course License - Advanced Optimization         S210105/0001AO-GEN
+      DTU, Department of Electrical Engineering                 DCE1073
+      License for teaching and research at degree granting institutions
+
+
+**** FILE SUMMARY
+
+Input      /home/drake/Downloads/Lecture 5, GAMS code, Stochastic market clearing - optimization.gms
+Output     /home/drake/workspace/power/dtu31792/project/Lecture 5, GAMS code, Stochastic market clearing - optimization.lst
